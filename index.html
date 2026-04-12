@@ -109,9 +109,10 @@ function filterAndRender(model, q) {
   const result = kw
     ? (() => {
         const kwJamo = decomposeKo(kw).replace(/ /g, '');
+        const kwEn = kw.toLowerCase().replace(/ /g, '');
         const isChosung = /^[ㄱ-ㅎ]+$/.test(kwJamo);
         return games.filter(g =>
-          (g.title   && g.title.toLowerCase().includes(kw.toLowerCase())) ||
+          (g.title   && g.title.toLowerCase().replace(/ /g, '').includes(kwEn)) ||
           (g.jamo    && g.jamo.includes(kwJamo)) ||
           (isChosung && g.chosung && g.chosung.includes(kwJamo))
         );
