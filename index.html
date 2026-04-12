@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="월광보합 게임검색엔진">
+  <meta property="og:url" content="https://game.gslump.com">
+  <link rel="canonical" href="https://game.gslump.com">
+  <meta name="description" content="월광보합 시리즈 게임검색엔진">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+  <title>월광보합 게임검색엔진</title>
+  <style>
+  body { padding-top: 1rem; padding-bottom: 1rem; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="d-flex align-items-center mb-2">
+    <h4 class="mb-0"><a id="title-link" href="#">월광보합</a> <small>게임검색엔진</small></h4>
+    <a href="https://github.com/sng2c/retro-game-search" target="_blank" rel="noopener" class="ml-auto" title="GitHub">
+      <img src="https://img.shields.io/badge/GitHub-sng2c%2Fretro--game--search-0969DA?style=for-the-badge&logo=github&logoColor=white" alt="GitHub">
+    </a>
+  </div>
+  <form id="search-form">
+    <div class="form-group row">
+      <div class="col-sm-12">
+        <select id="model-select" class="form-control">
+          <option value="">모델선택</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group row">
+      <div class="col-sm-12">
+        <div class="input-group">
+          <input id="query-input" class="form-control" type="text" placeholder="">
+          <div class="input-group-append">
+            <button class="btn btn-outline-secondary" type="submit">검색</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </form>
+  <ul id="game-list" class="list-group"></ul>
+</div>
+
+<script src="games.js"></script>
+<script>
+const modelSelect = document.getElementById('model-select');
+
+// MODELS(games.js)로 select 옵션 동적 생성
+Object.entries(MODELS).forEach(([code, label]) => {
+  const opt = document.createElement('option');
+  opt.value = code;
+  opt.textContent = label;
+  modelSelect.appendChild(opt);
+});
+
+
+const queryInput  = document.getElementById('query-input');
+const gameList    = document.getElementById('game-list');
+const titleLink   = document.getElementById('title-link');
+
+function getParams() {
+  const p = new URLSearchParams(location.search);
+  return { model: p.get('model') || '', q: p.get('q') || '' };
+}
+
+function setParams(model, q) {
+  const p = new URLSearchParams();
+  if (model) p.set('model', model);
+  if (q)     p.set('q', q);
+  const qs = p.toString();
+  history.pushState({}, '', qs ? '?' + qs : location.pathname);
+}
+
+function renderList(games) {
+  gameList.innerHTML = games.map(g => {
+    const badge = `<span class="badge badge-pill badge-dark">${g.id}</span>`;
+    let title;
+    if (g.title && g.title_ko) {
+      title = `<span class="title">${g.title_ko}</span> <span class="title"><small> - ${g.title}</small></span>`;
+    } else {
+      title = `<span class="title">${g.title_ko || g.title}</span>`;
+    }
+    return `<li class="list-group-item">${badge} ${title}</li>`;
+  }).join('');
+}
+
+const CHOSUNG  = 'ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ';
+const JUNGSUNG = 'ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ';
+const JONGSUNG = ' ㄱㄲㄳㄴㄵㄶㄷㄹㄺㄻㄼㄽㄾㄿㅀㅁㅂㅄㅅㅆㅇㅈㅊㅋㅌㅍㅎ';
+
+function decomposeKo(text) {
+  return [...text].map(ch => {
+    const code = ch.charCodeAt(0);
+    if (code < 0xAC00 || code > 0xD7A3) return ch;
+    const offset = code - 0xAC00;
+    const cho  = Math.floor(offset / (21 * 28));
+    const jung = Math.floor((offset % (21 * 28)) / 28);
+    const jong = offset % 28;
+    return CHOSUNG[cho] + JUNGSUNG[jung] + (jong ? JONGSUNG[jong] : '');
+  }).join('');
+}
+
+function filterAndRender(model, q) {
+  const games = (GAMES[model] || []);
+  if (!games.length) { gameList.innerHTML = ''; return; }
+  const kw = q.trim();
+  const result = kw
+    ? (() => {
+        const kwJamo = decomposeKo(kw).replace(/ /g, '');
+        const isChosung = /^[ㄱ-ㅎ]+$/.test(kwJamo);
+        return games.filter(g =>
+          (g.title   && g.title.toLowerCase().includes(kw.toLowerCase())) ||
+          (g.jamo    && g.jamo.includes(kwJamo)) ||
+          (isChosung && g.chosung && g.chosung.includes(kwJamo))
+        );
+      })()
+    : games;
+  renderList(result);
+}
+
+function updateTitle(model, q) {
+  const modelTitle = MODELS[model] || '월광보합';
+  const base = model ? modelTitle : '월광보합';
+  document.title = q ? `${base} - '${q}' 검색결과` : `${base} 게임검색엔진`;
+  titleLink.href = model ? `?model=${encodeURIComponent(model)}` : '?';
+  titleLink.textContent = base;
+}
+
+function applyState() {
+  const { model, q } = getParams();
+  modelSelect.value = model;
+  queryInput.value  = q;
+  updateTitle(model, q);
+  filterAndRender(model, q);
+}
+
+// 모델 변경 시 즉시 submit
+modelSelect.addEventListener('change', () => {
+  setParams(modelSelect.value, queryInput.value);
+  applyState();
+});
+
+document.getElementById('search-form').addEventListener('submit', e => {
+  e.preventDefault();
+  setParams(modelSelect.value, queryInput.value);
+  applyState();
+});
+
+queryInput.addEventListener('input', () => {
+  filterAndRender(modelSelect.value, queryInput.value);
+});
+
+window.addEventListener('popstate', applyState);
+
+applyState();
+</script>
+</body>
+</html>
