@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="월광보합 게임검색엔진">
+  <meta property="og:url" content="https://game.gslump.com">
+  <link rel="canonical" href="https://game.gslump.com">
+  <meta name="description" content="월광보합 시리즈 게임검색엔진">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+  <title>월광보합 게임검색엔진</title>
+  <style>
+  body { padding-top: 1rem; padding-bottom: 1rem; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="d-flex align-items-center mb-2">
+    <h4 class="mb-0"><a id="title-link" href="#">월광보합</a> <small>게임검색엔진</small></h4>
+    <a href="https://github.com/sng2c/retro-game-search" target="_blank" rel="noopener" class="ml-auto text-dark" title="GitHub">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="24" height="24" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+    </a>
+  </div>
+  <form id="search-form">
+    <div class="form-group row">
+      <div class="col-sm-12">
+        <select id="model-select" class="form-control">
+          <option value="">모델선택</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group row">
+      <div class="col-sm-12">
+        <div class="input-group">
+          <input id="query-input" class="form-control" type="text" placeholder="">
+          <div class="input-group-append">
+            <button class="btn btn-outline-secondary" type="submit">검색</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </form>
+  <ul id="game-list" class="list-group"></ul>
+</div>
+
+<!-- @@GAMES_DATA@@ -->
+<script>
+const modelSelect = document.getElementById('model-select');
+
+// MODELS(games.js)로 select 옵션 동적 생성
+Object.entries(MODELS).forEach(([code, label]) => {
+  const opt = document.createElement('option');
+  opt.value = code;
+  opt.textContent = label;
+  modelSelect.appendChild(opt);
+});
+
+
+const queryInput  = document.getElementById('query-input');
+const gameList    = document.getElementById('game-list');
+const titleLink   = document.getElementById('title-link');
+
+function getParams() {
+  const p = new URLSearchParams(location.search);
+  return { model: p.get('model') || '', q: p.get('q') || '' };
+}
+
+function setParams(model, q) {
+  const p = new URLSearchParams();
+  if (model) p.set('model', model);
+  if (q)     p.set('q', q);
+  const qs = p.toString();
+  history.pushState({}, '', qs ? '?' + qs : location.pathname);
+}
+
+const HL = '<span style="color:#007bff;">';
+const HL_END = '</span>';
+
+function escapeHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// 각 highlighter는 { html, matchLen } 반환
+// matchLen: 원본 텍스트에서 하이라이트된 문자 수 (0 = 매치 없음)
+
+// 공백 무시 substring 하이라이트 (대소문자 무시, 다중 매치)
+function highlightSpaceIgnored(text, kw) {
+  const kwNorm   = kw.replace(/ /g, '').toLowerCase();
+  const textNorm = text.replace(/ /g, '').toLowerCase();
+  const origIdxs = [];
+  [...text].forEach((ch, i) => { if (ch !== ' ') origIdxs.push(i); });
+
+  let html = '', normOffset = 0, origOffset = 0, matchLen = 0;
+  let idx;
+  while ((idx = textNorm.indexOf(kwNorm, normOffset)) !== -1) {
+    const origStart = origIdxs[idx];
+    const origEnd   = origIdxs[idx + kwNorm.length - 1];
+    const matched   = text.slice(origStart, origEnd + 1);
+    html += escapeHtml(text.slice(origOffset, origStart))
+          + HL + escapeHtml(matched) + HL_END;
+    matchLen   += matched.length;
+    normOffset  = idx + kwNorm.length;
+    origOffset  = origEnd + 1;
+  }
+  html += escapeHtml(text.slice(origOffset));
+  return { html, matchLen };
+}
+
+// 초성 매치
+function highlightChosung(text, kwChosung) {
+  const chars = [...text];
+  const hangulIdxs = [];
+  chars.forEach((ch, i) => {
+    const c = ch.charCodeAt(0);
+    if (c >= 0xAC00 && c <= 0xD7A3) hangulIdxs.push(i);
+  });
+  const csStr = hangulIdxs.map(i =>
+    CHOSUNG[Math.floor((chars[i].charCodeAt(0) - 0xAC00) / (21 * 28))]
+  ).join('');
+  const matchAt = csStr.indexOf(kwChosung);
+  if (matchAt === -1) return { html: escapeHtml(text), matchLen: 0 };
+  const origStart = hangulIdxs[matchAt];
+  const origEnd   = hangulIdxs[matchAt + kwChosung.length - 1];
+  const matched   = text.slice(origStart, origEnd + 1);
+  return {
+    html: escapeHtml(text.slice(0, origStart)) + HL + escapeHtml(matched) + HL_END + escapeHtml(text.slice(origEnd + 1)),
+    matchLen: matched.length,
+  };
+}
+
+// 자모 분해 매치
+function highlightJamoStr(text, kwJamo) {
+  const chars = [...text];
+  const map = [];
+  let jamoStr = '';
+  chars.forEach((ch, i) => {
+    const code = ch.charCodeAt(0);
+    if (code >= 0xAC00 && code <= 0xD7A3) {
+      const offset = code - 0xAC00;
+      const cho  = Math.floor(offset / (21 * 28));
+      const jung = Math.floor((offset % (21 * 28)) / 28);
+      const jong = offset % 28;
+      const jamo = CHOSUNG[cho] + JUNGSUNG[jung] + (jong ? JONGSUNG[jong] : '');
+      map.push({ origIdx: i, jamoLen: jamo.length });
+      jamoStr += jamo;
+    }
+  });
+  const matchAt = jamoStr.indexOf(kwJamo);
+  if (matchAt === -1) return { html: escapeHtml(text), matchLen: 0 };
+  let pos = 0, origStart = -1, origEnd = -1;
+  for (const { origIdx, jamoLen } of map) {
+    if (origStart === -1 && pos + jamoLen > matchAt) origStart = origIdx;
+    if (pos < matchAt + kwJamo.length)                 origEnd   = origIdx;
+    pos += jamoLen;
+    if (pos >= matchAt + kwJamo.length) break;
+  }
+  if (origStart === -1) return { html: escapeHtml(text), matchLen: 0 };
+  const matched = text.slice(origStart, origEnd + 1);
+  return {
+    html: escapeHtml(text.slice(0, origStart)) + HL + escapeHtml(matched) + HL_END + escapeHtml(text.slice(origEnd + 1)),
+    matchLen: matched.length,
+  };
+}
+
+function renderList(games) {
+  gameList.innerHTML = games.map(g => {
+    let title;
+    if (g.title && g.title_ko) {
+      title = `<div class="flex-grow-1"><div class="title">${escapeHtml(g.title_ko)}</div><div class="title"><small>${escapeHtml(g.title)}</small></div></div>`;
+    } else {
+      title = `<div class="flex-grow-1"><div class="title">${escapeHtml(g.title_ko || g.title)}</div></div>`;
+    }
+    const num = `<div class="ml-auto pl-3 text-nowrap"><span class="badge badge-pill badge-primary" style="font-size:0.85em;min-width:5.5em;display:inline-block;text-align:center;padding-top:0.5em;padding-bottom:0.5em;">${g.id}번</span></div>`;
+    return `<li class="list-group-item d-flex align-items-center">${title}${num}</li>`;
+  }).join('');
+}
+
+function applyHighlight(kw) {
+  if (!kw) return;
+  const kwJamo = decomposeKo(kw).replace(/ /g, '');
+
+  gameList.querySelectorAll('.title, .title>small').forEach(el => {
+    if (el.querySelector('small')) return;
+    const text = el.textContent;
+    const best = [
+      highlightSpaceIgnored(text, kw),
+      highlightChosung(text, kwJamo),
+      highlightJamoStr(text, kwJamo),
+      highlightWordInitials(text, kw),
+    ].reduce((a, b) => b.matchLen > a.matchLen ? b : a);
+    if (best.matchLen > 0) el.innerHTML = best.html;
+  });
+}
+
+const CHOSUNG  = 'ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ';
+const JUNGSUNG = 'ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ';
+const JONGSUNG = ' ㄱㄲㄳㄴㄵㄶㄷㄹㄺㄻㄼㄽㄾㄿㅀㅁㅂㅄㅅㅆㅇㅈㅊㅋㅌㅍㅎ';
+
+function wordInitials(text) {
+  return (text.match(/\S+/g) || []).map(w => w[0].toLowerCase()).join('');
+}
+
+// 영문 단어 초성(두문자) 매치 하이라이트
+function highlightWordInitials(text, kw) {
+  const kwNorm = kw.replace(/ /g, '').toLowerCase();
+  const words  = [...text.matchAll(/\S+/g)].map(m => ({
+    start: m.index,
+    end:   m.index + m[0].length - 1,
+  }));
+  const initials = words.map(w => text[w.start].toLowerCase()).join('');
+  const matchAt  = initials.indexOf(kwNorm);
+  if (matchAt === -1) return { html: escapeHtml(text), matchLen: 0 };
+  const origStart = words[matchAt].start;
+  const origEnd   = words[matchAt + kwNorm.length - 1].end;
+  const matched   = text.slice(origStart, origEnd + 1);
+  return {
+    html: escapeHtml(text.slice(0, origStart)) + HL + escapeHtml(matched) + HL_END + escapeHtml(text.slice(origEnd + 1)),
+    matchLen: matched.length,
+  };
+}
+
+function decomposeKo(text) {
+  return [...text].map(ch => {
+    const code = ch.charCodeAt(0);
+    if (code < 0xAC00 || code > 0xD7A3) return ch;
+    const offset = code - 0xAC00;
+    const cho  = Math.floor(offset / (21 * 28));
+    const jung = Math.floor((offset % (21 * 28)) / 28);
+    const jong = offset % 28;
+    return CHOSUNG[cho] + JUNGSUNG[jung] + (jong ? JONGSUNG[jong] : '');
+  }).join('');
+}
+
+function filterAndRender(model, q) {
+  const games = (GAMES[model] || []);
+  if (!games.length) { gameList.innerHTML = ''; return; }
+  const kw = q.trim();
+  const result = kw
+    ? (() => {
+        const kwJamo = decomposeKo(kw).replace(/ /g, '');
+        const kwEn = kw.toLowerCase().replace(/ /g, '');
+        const isChosung = /^[ㄱ-ㅎ]+$/.test(kwJamo);
+        return games.filter(g =>
+          (g.title   && g.title.toLowerCase().replace(/ /g, '').includes(kwEn)) ||
+          (g.initials && g.initials.includes(kwEn)) ||
+          (g.jamo    && g.jamo.includes(kwJamo)) ||
+          (isChosung && g.chosung && g.chosung.includes(kwJamo))
+        );
+      })()
+    : games;
+  renderList(result);
+  applyHighlight(kw);
+}
+
+function updateTitle(model, q) {
+  const modelTitle = MODELS[model] || '월광보합';
+  const base = model ? modelTitle : '월광보합';
+  document.title = q ? `${base} - '${q}' 검색결과` : `${base} 게임검색엔진`;
+  titleLink.href = model ? `?model=${encodeURIComponent(model)}` : '?';
+  titleLink.textContent = base;
+}
+
+function applyState() {
+  const { model, q } = getParams();
+  modelSelect.value = model;
+  queryInput.value  = q;
+  updateTitle(model, q);
+  filterAndRender(model, q);
+}
+
+// 모델 변경 시 즉시 submit
+modelSelect.addEventListener('change', () => {
+  setParams(modelSelect.value, queryInput.value);
+  applyState();
+});
+
+document.getElementById('search-form').addEventListener('submit', e => {
+  e.preventDefault();
+  setParams(modelSelect.value, queryInput.value);
+  applyState();
+});
+
+queryInput.addEventListener('input', () => {
+  filterAndRender(modelSelect.value, queryInput.value);
+});
+
+window.addEventListener('popstate', applyState);
+
+applyState();
+</script>
+</body>
+</html>

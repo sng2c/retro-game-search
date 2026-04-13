@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""CSV → games.js converter
-Usage: python3 convert.py
+"""CSV → index.html builder
+Usage: python3 build.py
 """
 import csv
 import json
@@ -40,10 +40,12 @@ def decompose(text):
             result.append(ch)
     return ''.join(result)
 
-BASE = os.path.dirname(__file__)
-MODELS_SRC = os.path.join(BASE, 'models.csv')
-GAMES_SRC  = os.path.join(BASE, 'games.csv')
-OUT        = os.path.join(BASE, 'games.js')
+BASE         = os.path.dirname(__file__)
+MODELS_SRC   = os.path.join(BASE, 'models.csv')
+GAMES_SRC    = os.path.join(BASE, 'games.csv')
+TEMPLATE     = os.path.join(BASE, 'template.html')
+OUT          = os.path.join(BASE, 'index.html')
+MARKER       = '<!-- @@GAMES_DATA@@ -->'
 
 # models.csv 로드
 models = {}
@@ -61,6 +63,7 @@ with open(GAMES_SRC, newline='', encoding='utf-8') as f:
             'title_ko': row['title_ko'],
             'jamo': decompose(row['title_ko']).replace(' ', ''),
             'chosung': chosung_only(row['title_ko']),
+            'initials': ''.join(w[0].lower() for w in row['title'].split() if w),
         })
 
 # 정합성 검사
@@ -79,14 +82,28 @@ if errors:
         print(e)
     sys.exit(1)
 
-# 출력
+# 데이터 스크립트 블록 생성
+data_script = '<script>\n'
+data_script += 'const MODELS = '
+data_script += json.dumps(models, ensure_ascii=False)
+data_script += ';\n'
+data_script += 'const GAMES = '
+data_script += json.dumps(dict(groups), ensure_ascii=False)
+data_script += ';\n'
+data_script += '</script>'
+
+# template.html 로드 후 마커 치환 → index.html 출력
+with open(TEMPLATE, encoding='utf-8') as f:
+    template = f.read()
+
+if MARKER not in template:
+    print(f'[오류] template.html에 삽입 마커({MARKER})가 없습니다.')
+    sys.exit(1)
+
+output = template.replace(MARKER, data_script)
+
 with open(OUT, 'w', encoding='utf-8') as f:
-    f.write('const MODELS = ')
-    f.write(json.dumps(models, ensure_ascii=False))
-    f.write(';\n')
-    f.write('const GAMES = ')
-    f.write(json.dumps(dict(groups), ensure_ascii=False))
-    f.write(';\n')
+    f.write(output)
 
 total = sum(len(v) for v in groups.values())
 print(f'  {OUT} ({total} games, {len(models)} models)')
