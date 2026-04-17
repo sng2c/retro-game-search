@@ -34,6 +34,7 @@
         <div class="input-group">
           <input id="query-input" class="form-control" type="text" placeholder="">
           <div class="input-group-append">
+            <button class="btn btn-outline-warning" type="button" id="fav-toggle" title="즐겨찾기만 보기" aria-label="즐겨찾기만 보기" aria-pressed="false">★</button>
             <button class="btn btn-outline-secondary" type="submit">검색</button>
           </div>
         </div>
@@ -59,16 +60,37 @@ Object.entries(MODELS).forEach(([code, label]) => {
 const queryInput  = document.getElementById('query-input');
 const gameList    = document.getElementById('game-list');
 const titleLink   = document.getElementById('title-link');
+const favToggle   = document.getElementById('fav-toggle');
+
+const FAV_KEY = 'rgs:favs';
+function loadFavs() {
+  try { return JSON.parse(localStorage.getItem(FAV_KEY)) || {}; }
+  catch (e) { return {}; }
+}
+function saveFavs(favs) { localStorage.setItem(FAV_KEY, JSON.stringify(favs)); }
+function getFavIds(model) { return new Set(loadFavs()[model] || []); }
+function toggleFav(model, id) {
+  const favs = loadFavs();
+  const list = favs[model] || [];
+  const idx = list.indexOf(id);
+  if (idx === -1) list.push(id);
+  else list.splice(idx, 1);
+  if (list.length) favs[model] = list;
+  else delete favs[model];
+  saveFavs(favs);
+  return idx === -1;
+}
 
 function getParams() {
   const p = new URLSearchParams(location.search);
-  return { model: p.get('model') || '', q: p.get('q') || '' };
+  return { model: p.get('model') || '', q: p.get('q') || '', fav: p.get('fav') === '1' };
 }
 
-function setParams(model, q) {
+function setParams(model, q, fav) {
   const p = new URLSearchParams();
   if (model) p.set('model', model);
   if (q)     p.set('q', q);
+  if (fav)   p.set('fav', '1');
   const qs = p.toString();
   history.pushState({}, '', qs ? '?' + qs : location.pathname);
 }
@@ -162,7 +184,8 @@ function highlightJamoStr(text, kwJamo) {
   };
 }
 
-function renderList(games) {
+function renderList(games, model) {
+  const favIds = getFavIds(model);
   gameList.innerHTML = games.map(g => {
     let title;
     if (g.title && g.title_ko) {
@@ -171,7 +194,9 @@ function renderList(games) {
       title = `<div class="flex-grow-1"><div class="title">${escapeHtml(g.title_ko || g.title)}</div></div>`;
     }
     const num = `<div class="ml-auto pl-3 text-nowrap"><span class="badge badge-pill badge-primary" style="font-size:0.85em;min-width:5.5em;display:inline-block;text-align:center;padding-top:0.5em;padding-bottom:0.5em;">${g.id}번</span></div>`;
-    return `<li class="list-group-item d-flex align-items-center">${title}${num}</li>`;
+    const on  = favIds.has(g.id);
+    const fav = `<button type="button" class="btn btn-link fav-btn p-0 ml-2" data-id="${escapeHtml(g.id)}" aria-label="즐겨찾기" aria-pressed="${on}" style="font-size:1.3em;line-height:1;text-decoration:none;color:${on ? '#f0ad4e' : '#ccc'};">${on ? '★' : '☆'}</button>`;
+    return `<li class="list-group-item d-flex align-items-center">${title}${num}${fav}</li>`;
   }).join('');
 }
 
@@ -231,9 +256,13 @@ function decomposeKo(text) {
   }).join('');
 }
 
-function filterAndRender(model, q) {
-  const games = (GAMES[model] || []);
+function filterAndRender(model, q, favOnly) {
+  let games = (GAMES[model] || []);
   if (!games.length) { gameList.innerHTML = ''; return; }
+  if (favOnly) {
+    const favIds = getFavIds(model);
+    games = games.filter(g => favIds.has(g.id));
+  }
   const kw = q.trim();
   const result = kw
     ? (() => {
@@ -248,40 +277,70 @@ function filterAndRender(model, q) {
         );
       })()
     : games;
-  renderList(result);
+  renderList(result, model);
   applyHighlight(kw);
 }
 
-function updateTitle(model, q) {
+function updateTitle(model, q, fav) {
   const modelTitle = MODELS[model] || '월광보합';
   const base = model ? modelTitle : '월광보합';
-  document.title = q ? `${base} - '${q}' 검색결과` : `${base} 게임번호찾기`;
+  const parts = [];
+  if (fav) parts.push('즐겨찾기');
+  if (q)   parts.push(`'${q}' 검색결과`);
+  document.title = parts.length ? `${base} - ${parts.join(' ')}` : `${base} 게임번호찾기`;
   titleLink.href = model ? `?model=${encodeURIComponent(model)}` : '?';
   titleLink.textContent = base;
 }
 
 function applyState() {
-  const { model, q } = getParams();
+  const { model, q, fav } = getParams();
   modelSelect.value = model;
   queryInput.value  = q;
-  updateTitle(model, q);
-  filterAndRender(model, q);
+  favToggle.classList.toggle('btn-warning', fav);
+  favToggle.classList.toggle('btn-outline-warning', !fav);
+  favToggle.setAttribute('aria-pressed', fav);
+  updateTitle(model, q, fav);
+  filterAndRender(model, q, fav);
 }
 
-// 모델 변경 시 즉시 submit
+// 모델 변경 시 즉시 submit (fav 상태는 유지)
 modelSelect.addEventListener('change', () => {
-  setParams(modelSelect.value, queryInput.value);
+  setParams(modelSelect.value, queryInput.value, getParams().fav);
   applyState();
 });
 
 document.getElementById('search-form').addEventListener('submit', e => {
   e.preventDefault();
-  setParams(modelSelect.value, queryInput.value);
+  setParams(modelSelect.value, queryInput.value, getParams().fav);
   applyState();
 });
 
 queryInput.addEventListener('input', () => {
-  filterAndRender(modelSelect.value, queryInput.value);
+  filterAndRender(modelSelect.value, queryInput.value, getParams().fav);
+});
+
+favToggle.addEventListener('click', () => {
+  const { fav } = getParams();
+  setParams(modelSelect.value, queryInput.value, !fav);
+  applyState();
+});
+
+// 리스트 내 ★ 버튼 클릭은 이벤트 위임으로 처리 (전체 재렌더 방지 → 스크롤·하이라이트 유지)
+gameList.addEventListener('click', e => {
+  const btn = e.target.closest('.fav-btn');
+  if (!btn) return;
+  const model = modelSelect.value;
+  if (!model) return;
+  const id = btn.dataset.id;
+  const nowFav = toggleFav(model, id);
+  const li = btn.closest('li');
+  if (getParams().fav && !nowFav) {
+    li.remove();
+  } else {
+    btn.textContent = nowFav ? '★' : '☆';
+    btn.style.color = nowFav ? '#f0ad4e' : '#ccc';
+    btn.setAttribute('aria-pressed', nowFav);
+  }
 });
 
 window.addEventListener('popstate', applyState);
