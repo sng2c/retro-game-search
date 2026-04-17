@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="ko">
 <head>
+  <meta charset="utf-8">
   <meta property="og:type" content="website">
   <meta property="og:title" content="월광보합 게임번호찾기">
   <meta property="og:url" content="https://game.gslump.com">
@@ -11,6 +12,13 @@
   <title>월광보합 게임번호찾기</title>
   <style>
   body { padding-top: 1rem; padding-bottom: 1rem; }
+  #fav-toggle {
+    background: none; border: none; padding: .375rem .5rem;
+    cursor: pointer; color: #ccc; font-size: 1.3em; line-height: 1;
+    text-decoration: none;
+  }
+  #fav-toggle.active { color: #f0ad4e; }
+  #fav-toggle:focus { outline: none; }
   </style>
 </head>
 <body>
@@ -34,8 +42,8 @@
         <div class="input-group">
           <input id="query-input" class="form-control" type="text" placeholder="">
           <div class="input-group-append">
-            <button class="btn btn-outline-warning" type="button" id="fav-toggle" title="즐겨찾기만 보기" aria-label="즐겨찾기만 보기" aria-pressed="false">★</button>
             <button class="btn btn-outline-secondary" type="submit">검색</button>
+            <button type="button" id="fav-toggle" title="즐겨찾기만 보기" aria-label="즐겨찾기만 보기" aria-pressed="false">★</button>
           </div>
         </div>
       </div>
@@ -256,9 +264,19 @@ function decomposeKo(text) {
   }).join('');
 }
 
+function emptyMsg(q, favOnly) {
+  if (!q && !favOnly) return '';
+  if ( q && !favOnly) return '일치하는 게임이 없습니다.';
+  if (!q &&  favOnly) return '즐겨찾기가 없습니다.';
+                      return '일치하는 즐겨찾기가 없습니다.';
+}
+
 function filterAndRender(model, q, favOnly) {
+  if (!model) {
+    gameList.innerHTML = '<li class="list-group-item text-muted text-center border-0">모델을 선택해주세요.</li>';
+    return;
+  }
   let games = (GAMES[model] || []);
-  if (!games.length) { gameList.innerHTML = ''; return; }
   if (favOnly) {
     const favIds = getFavIds(model);
     games = games.filter(g => favIds.has(g.id));
@@ -277,6 +295,11 @@ function filterAndRender(model, q, favOnly) {
         );
       })()
     : games;
+  if (!result.length) {
+    const msg = emptyMsg(kw, favOnly);
+    gameList.innerHTML = msg ? `<li class="list-group-item text-muted text-center border-0">${msg}</li>` : '';
+    return;
+  }
   renderList(result, model);
   applyHighlight(kw);
 }
@@ -296,8 +319,7 @@ function applyState() {
   const { model, q, fav } = getParams();
   modelSelect.value = model;
   queryInput.value  = q;
-  favToggle.classList.toggle('btn-warning', fav);
-  favToggle.classList.toggle('btn-outline-warning', !fav);
+  favToggle.classList.toggle('active', fav);
   favToggle.setAttribute('aria-pressed', fav);
   updateTitle(model, q, fav);
   filterAndRender(model, q, fav);
