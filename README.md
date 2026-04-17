@@ -34,14 +34,14 @@
 template.html   UI 템플릿 — 편집 대상
 games.csv       게임 데이터 — 편집 대상
 models.csv      기기 모델 목록 — 편집 대상
-build.py        빌드 스크립트
+build.js        빌드 스크립트
 index.html      빌드 산출물 — 직접 편집 금지
 ```
 
 ### 빌드
 
 ```bash
-python3 build.py
+node build.js
 ```
 
 `games.csv`와 `models.csv`를 읽어 `template.html`에 데이터를 인라인 삽입한 `index.html`을 생성합니다.
@@ -60,7 +60,7 @@ model,id,title,title_ko
 | `title` | 영문 타이틀 (없으면 빈 값) |
 | `title_ko` | 한글 타이틀 (없으면 빈 값) |
 
-> 검색용 파생 필드(`jamo`, `chosung`, `initials`)는 `build.py`가 자동으로 계산합니다. CSV에 추가할 필요 없습니다.
+> 검색용 파생 필드(`jamo`, `chosung`, `initials`)는 `build.js`가 자동으로 계산합니다. CSV에 추가할 필요 없습니다.
 
 ### models.csv 포맷
 
@@ -74,7 +74,7 @@ model,label
 | `model` | 기기 모델 코드 (`games.csv`와 일치해야 함) |
 | `label` | 셀렉트박스에 표시할 이름 |
 
-> `build.py`는 두 CSV의 모델 코드가 일치하는지 정합성 검사를 수행합니다.
+> `build.js`는 두 CSV의 모델 코드가 일치하는지 정합성 검사를 수행합니다.
 
 ### CSV 인코딩
 
